@@ -23,42 +23,38 @@
 (defun viperfmt-reformat-buffer ()
   "Reformat the whole buffer."
   (interactive)
-  (viperfmt-reformat-region (point-min)
-                            (point-max)))
+  (save-excursion
+    (if (version<= "26.2" emacs-version)
+        (viperfmt--reformat-buffer)
+      (error "You really should be using Emacs version >= 26.2"))))
 
 ;;;###autoload
-(defun viperfmt-reformat-region (beg end)
-  "Reformat the region from BEG to END, accounting for indentation."
-  (interactive "r")
-  (let ((inhibit-read-only t))
-    (if (= (save-excursion (goto-char beg)
-                           (line-beginning-position))
-           beg)
-        (viperfmt-reformat-region-as-is beg end)
-      (let* ((column (- beg (line-beginning-position)))
-             (string (buffer-substring-no-properties beg end))
-             (new-string (with-temp-buffer
-                           (insert (make-string column ? ) string)
-                           (viper-reformat-region-as-is (point-min)
-                                                        (point-max))
-                           (delete-region (point-min) (1+ column))
-                           (buffer-substring (point-min)
-                                             (point-max)))))
-        (save-excursion
-          (goto-char beg)
-          (delete-region beg end)
-          (insert new-string))))))
+(defun viperfmt--reformat-buffer ()
+  "Reformat and replace current buffer."
+  (let* ((filename buffer-file-name)
+         (formatted-buffer (get-buffer-create "*viperfmt*"))
+         (formatted-contents (viperfmt--reformat-region-as-is (point-min)
+                                                              (point-max))))
+    (unwind-protect
+        (progn (with-current-buffer formatted-buffer
+                 (erase-buffer)
+                 (insert formatted-contents))
+               (erase-buffer)
+               (insert-buffer formatted-buffer))
+      (kill-buffer formatted-buffer))))
 
 ;; Internal functions
 
-(defun viperfmt-reformat-region-as-is (beg end)
+(defun viperfmt--reformat-region-as-is (beg end)
   "Reformat the given region from `BEG' to `END' as-is."
-  (let ((buffer-contents (buffer-substring beg end)))
-    (viperfmt-format-string buffer-contents)))
+  (with-current-buffer (current-buffer)
+    (let* ((buffer-contents (buffer-substring-no-properties beg end))
+           (s (viperfmt--format-string buffer-contents)))
+      s)))
 
-(defun viperfmt-format-string (str)
+(defun viperfmt--format-string (str)
   "Reformat `STR' as a Viper program."
-  (viperfmt-format-tokens (viperfmt-tokenize str)))
+  (viperfmt--format-tokens (viperfmt--tokenize str)))
 
 ;; Various helper utilities
 
@@ -84,13 +80,13 @@
   (or (string= c " ") (string= c "\t")
       (string= c "\r") (string= c "\n")))
 
-(defun get-indent (tab ind nxt)
+(defun get-indent (ind nxt)
   (let ((add 0))
     (when (or (string= nxt "requires")
               (string= nxt "ensures")
               (string= nxt "invariant"))
       (incq add))
-    (make-string (+ ind add) tab)))
+    (make-string (* 2 (+ ind add)) ? )))
 
 (defun get-index (a idx &optional v)
   "Get element at `IDX' from `A' or `V' if index doesn't exist."
@@ -99,7 +95,7 @@
     v))
 
 ;; FIXME this is a terrible copy of https://github.com/viperproject/viper-ide/blob/master/client/src/ViperFormatter.ts
-(defun viperfmt-tokenize (str)
+(defun viperfmt--tokenize (str)
   "Tokenize a Viper program `STR'."
   (let ((i 0)
         (token "")
@@ -147,40 +143,41 @@
     ;; NOTE the extra "" is needed to buffer the tokens at the end.
     (reverse (cons "" res))))
 
-(defun viperfmt-format-tokens (toks)
-  (letrec ((loopo (lambda (res indent space ts)
+(defun viperfmt--format-tokens (toks)
+  (letrec ((loopo (lambda (res indent ts)
                     (let* ((curr (car ts))
                            (next (cadr ts))
                            (k-norm (lambda (r i s)
-                                     (funcall loopo
-                                              (concat r curr s) i
-                                              (if (string= "\n" curr)
-                                                  (get-indent ?\t i next)
-                                                s) (cdr ts)))))
+                                     (when (string= "\n" curr)
+                                       (setq s (get-indent i next)))
+                                     (funcall loopo (concat r curr s)
+                                              i (cdr ts)))))
                       (cond
                        ((not (and curr next)) res)
                        ((string= "//" curr)
                         (funcall loopo (concat res curr next)
-                                 indent space (cddr ts)))
+                                 indent (cddr ts)))
                        ((string= "/*" curr)
-                        (funcall loopo (concat res next (caddr ts))
-                                 indent space (cdddr ts)))
+                        (funcall loopo (concat res curr next (caddr ts))
+                                 indent (cdddr ts)))
                        ((and (not (string= "returns" curr))
                              (or (substringp "([" curr)
-                                 (substringp "())]:," curr)
+                                 (substringp "())]:," next)
                                  (and (string= "{" next)
                                       (string-suffix-p ")" curr))))
                         (funcall k-norm res indent ""))
                        ((string= "{" curr)
-                        (funcall k-norm res (1+ indent)
-                                 (concat (if (string= "\n" next) "" "\n")
-                                         (get-indent ?\t indent next))))
+                        (let ((ind (1+ indent)))
+                          (funcall k-norm res ind
+                                   (concat (if (string= "\n" next) "" "\n")
+                                           (get-indent ind next)))))
                        ((string= "}" curr)
-                        (funcall k-norm res (- indent 1)
-                                 (concat (if (string= "\n" curr) "" "\n")
-                                         (get-indent ?\t indent next))))
-                       (t (funcall k-norm res indent space)))))))
-    (funcall loopo "" 0 " " toks)))
+                        (let ((ind (1- indent)))
+                          (funcall k-norm res ind
+                                   (concat (if (string= "\n" curr) "" "\n")
+                                           (get-indent ind next)))))
+                       (t (funcall k-norm res indent " ")))))))
+    (funcall loopo "" 0 toks)))
 
 ;;;; _
 
