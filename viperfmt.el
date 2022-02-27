@@ -19,6 +19,30 @@
 ;;
 ;;; Code:
 
+(defcustom viper-format-on-save nil
+  "Format future viper buffers before saving."
+  :type 'boolean
+  :safe #'booleanp
+  :group 'viper-mode)
+
+(defun viper-enable-format-on-save ()
+  "Enable formatting when saving buffer."
+  (interactive)
+  (setq-local viper-format-on-save t))
+
+(defun viper-disable-format-on-save ()
+  "Disable formatting when saving buffer."
+  (interactive)
+  (setq-local viper-format-on-save nil))
+
+(defun viper-before-save-method ()
+  (when viper-format-on-save
+    (condition-case e
+        (viperfmt-reformat-buffer)
+      (message (format "viper-before-save-hook %S %S")
+               (car e)
+               (cdr e)))))
+
 ;;;###autoload
 (defun viperfmt-reformat-buffer ()
   "Reformat the whole buffer."
@@ -31,17 +55,18 @@
 ;;;###autoload
 (defun viperfmt--reformat-buffer ()
   "Reformat and replace current buffer."
-  (let* ((filename buffer-file-name)
-         (formatted-buffer (get-buffer-create "*viperfmt*"))
-         (formatted-contents (viperfmt--reformat-region-as-is (point-min)
-                                                              (point-max))))
-    (unwind-protect
-        (progn (with-current-buffer formatted-buffer
+  (save-excursion
+    (let* ((filename buffer-file-name)
+           (formatted-buffer (get-buffer-create "*viperfmt*"))
+           (formatted-contents (viperfmt--reformat-region-as-is (point-min)
+                                                                (point-max))))
+      (unwind-protect
+          (progn (with-current-buffer formatted-buffer
+                   (erase-buffer)
+                   (insert formatted-contents))
                  (erase-buffer)
-                 (insert formatted-contents))
-               (erase-buffer)
-               (insert-buffer formatted-buffer))
-      (kill-buffer formatted-buffer))))
+                 (insert-buffer formatted-buffer))
+        (kill-buffer formatted-buffer)))))
 
 ;; Internal functions
 
@@ -68,13 +93,6 @@
           ,@body))
 (defun substringp (haystack needle)
   (string-match-p (regexp-quote needle) haystack))
-(defmacro reset-if-eq (expected pair prdc)
-  `(if (string= ,pair ,expected)
-       (progn (consq token res)
-              (setq token "")
-              (consq ,pair res)
-              (setq ,prdc nil))
-     (concatq token curr)))
 
 (defun whitespacep (c)
   (or (string= c " ") (string= c "\t")
@@ -111,9 +129,20 @@
              (peek-three (concat peek-two next-next)))
         (cond
          (line-comment
-          (reset-if-eq "\n" curr line-comment))
+         (if (string= "\n" curr)
+             (progn (consq token res)
+                    (setq token "")
+                    (consq "\n" res)
+                    (setq line-comment nil))
+           (concatq token curr)))
          (multi-comment
-          (reset-if-eq "*/" peek-two multi-comment))
+          (if (string= "*/" peek-two)
+             (progn (consq token res)
+                    (setq token "")
+                    (consq "*/" res)
+                    (incq i)
+                    (setq multi-comment nil))
+           (concatq token curr)))
          ((string= peek-two "//")
           (inner (consq "//" res)
                  (incq i)
@@ -148,9 +177,10 @@
                     (let* ((curr (car ts))
                            (next (cadr ts))
                            (k-norm (lambda (r i s)
-                                     (when (string= "\n" curr)
-                                       (setq s (get-indent i next)))
-                                     (funcall loopo (concat r curr s)
+                                     (funcall loopo (concat r curr
+                                                            (if (string= "\n" curr)
+                                                                (get-indent i next)
+                                                              s))
                                               i (cdr ts)))))
                       (cond
                        ((not (and curr next)) res)
@@ -171,7 +201,7 @@
                           (funcall k-norm res ind
                                    (concat (if (string= "\n" next) "" "\n")
                                            (get-indent ind next)))))
-                       ((string= "}" curr)
+                       ((string= "}" next)
                         (let ((ind (1- indent)))
                           (funcall k-norm res ind
                                    (concat (if (string= "\n" curr) "" "\n")

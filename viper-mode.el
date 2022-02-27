@@ -96,7 +96,7 @@
   (setq-local comment-start "// ")
   (setq-local comment-end   "")
 
-  ;; (add-hook 'before-save-hook viper-before-save-hook nil t)
+  (add-hook 'before-save-hook viper-before-save-hook nil t)
 
   (setq prettify-symbols-alist viper-prettify-symbols-alist))
 
