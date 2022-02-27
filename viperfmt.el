@@ -24,7 +24,7 @@
   "Reformat the whole buffer."
   (interactive)
   (viperfmt-reformat-region (point-min)
-                         (point-max)))
+                            (point-max)))
 
 ;;;###autoload
 (defun viperfmt-reformat-region (beg end)
@@ -60,7 +60,7 @@
   "Reformat `STR' as a Viper program."
   (viperfmt-format-tokens (viperfmt-tokenize str)))
 
-;; Various helper macros
+;; Various helper utilities
 
 (defmacro incq (v) `(setq ,v (1+ ,v)))
 (defmacro consq (c ls) `(setq ,ls (cons ,c ,ls)))
@@ -74,11 +74,29 @@
   (string-match-p (regexp-quote needle) haystack))
 (defmacro reset-if-eq (expected pair prdc)
   `(if (string= ,pair ,expected)
-       (progn (concatq res token)
+       (progn (consq token res)
               (setq token "")
               (consq ,pair res)
               (setq ,prdc nil))
      (concatq token curr)))
+
+(defun whitespacep (c)
+  (or (string= c " ") (string= c "\t")
+      (string= c "\r") (string= c "\n")))
+
+(defun get-indent (tab ind nxt)
+  (let ((add 0))
+    (when (or (string= nxt "requires")
+              (string= nxt "ensures")
+              (string= nxt "invariant"))
+      (incq add))
+    (make-string (+ ind add) tab)))
+
+(defun get-index (a idx &optional v)
+  "Get element at `IDX' from `A' or `V' if index doesn't exist."
+  (if (and (<= 0 idx) (< idx (length a)))
+      (char-to-string (aref a idx))
+    v))
 
 ;; FIXME this is a terrible copy of https://github.com/viperproject/viper-ide/blob/master/client/src/ViperFormatter.ts
 (defun viperfmt-tokenize (str)
@@ -97,7 +115,7 @@
              (peek-three (concat peek-two next-next)))
         (cond
          (line-comment
-          (reset-if-eq "\n" peek-two line-comment))
+          (reset-if-eq "\n" curr line-comment))
          (multi-comment
           (reset-if-eq "*/" peek-two multi-comment))
          ((string= peek-two "//")
@@ -115,6 +133,9 @@
           (inner (consq peek-two res)
                  (incq i)))
          ((or (whitespacep curr) (substringp "()[]{}:,+-\\*><!" curr))
+          (when (< 0 (length token))
+            (consq token res)
+            (setq token ""))
           (when (or (string= curr "\n")
                     (and (< 0 (length curr))
                          (substringp "()[]{}:,+-\\*>=<=!=" curr)))
@@ -123,67 +144,46 @@
         (incq i)))
     (when (< 0 (length token))
       (consq token res))
-    (reverse res)))
+    ;; NOTE the extra "" is needed to buffer the tokens at the end.
+    (reverse (cons "" res))))
 
 (defun viperfmt-format-tokens (toks)
-  (let ((res "")
-        (indent 0)
-        (i 0)
-        (space " "))
-    (letrec ((loop (lambda (i)
-                     (when (< i (length toks))
-                       (let ((curr (get-index toks i))
-                             (next (get-index toks (1+ i) "")))
-                         (cond
-                          ((string= "//" curr)
-                           (concatq res (concat curr next))
-                           (loop (1+ i)))
-                          ((string= "/*" curr)
-                           (concatq res (concat curr next
-                                                (get-index toks (+ i 2) "")))
-                           (loop (+ i 2)))
-                          ((and (not (string= "returns" curr))
-                                (or (substringp "([" curr)
-                                    (substringp "())]:," curr)
-                                    (and (string= "{" next)
-                                         (string-suffix-p ")" curr))))
-                           (setq space ""))
-                          ((string= "{" curr)
-                           (incq indent)
-                           (setq space (concat (if (string= "\n" next) "" "\n")
-                                               (get-indent "\t" indent next))))
-                          ((string= "}" curr)
-                           (setq indent (- indent 1))
-                           (setq space (concat (if (string= "\n" curr) "" "\n")
-                                               (get-indent "\t" indent next))))
-                          ((string= "\n" curr)
-                           (setq space (get-indent "\t" indent next))))
-                         (concatq res (concat curr space))
-                         (loop (1+ i)))))))
-      (loop 0)
-      res)))
-
-(defun whitespacep (c)
-  (or (string= c " ") (string= c "\t")
-      (string= c "\r") (string= c "\n")))
-
-(defun get-indent (tab ind nxt)
-  (let ((res "")
-        (add 0))
-    (when (or (string= nxt "requires")
-              (string= nxt "ensures")
-              (string= nxt "invariant"))
-      (incq add))
-    (dotimes (_ (+ tab add))
-      (concatq res "\t"))
-    res))
-
-(defun get-index (a idx &optional v)
-  "Get element at `IDX' from `A' or `V' if index doesn't exist."
-  (if (and (<= 0 idx) (< idx (length a)))
-      (char-to-string (aref a idx))
-    v))
+  (letrec ((loopo (lambda (res indent space ts)
+                    (let* ((curr (car ts))
+                           (next (cadr ts))
+                           (k-norm (lambda (r i s)
+                                     (funcall loopo
+                                              (concat r curr s) i
+                                              (if (string= "\n" curr)
+                                                  (get-indent ?\t i next)
+                                                s) (cdr ts)))))
+                      (cond
+                       ((not (and curr next)) res)
+                       ((string= "//" curr)
+                        (funcall loopo (concat res curr next)
+                                 indent space (cddr ts)))
+                       ((string= "/*" curr)
+                        (funcall loopo (concat res next (caddr ts))
+                                 indent space (cdddr ts)))
+                       ((and (not (string= "returns" curr))
+                             (or (substringp "([" curr)
+                                 (substringp "())]:," curr)
+                                 (and (string= "{" next)
+                                      (string-suffix-p ")" curr))))
+                        (funcall k-norm res indent ""))
+                       ((string= "{" curr)
+                        (funcall k-norm res (1+ indent)
+                                 (concat (if (string= "\n" next) "" "\n")
+                                         (get-indent ?\t indent next))))
+                       ((string= "}" curr)
+                        (funcall k-norm res (- indent 1)
+                                 (concat (if (string= "\n" curr) "" "\n")
+                                         (get-indent ?\t indent next))))
+                       (t (funcall k-norm res indent space)))))))
+    (funcall loopo "" 0 " " toks)))
 
 ;;;; _
+
 (provide 'viperfmt)
+
 ;;; viperfmt.el ends here
