@@ -47,35 +47,37 @@
 (defun viperfmt-reformat-buffer ()
   "Reformat the whole buffer."
   (interactive)
-  (save-excursion
-    (if (version<= "26.2" emacs-version)
-        (viperfmt--reformat-buffer)
-      (error "You really should be using Emacs version >= 26.2"))))
+  (unless (eq major-mode 'viper-mode)
+    (error "Not a viper-mode buffer"))
+  (if (version<= "26.2" emacs-version)
+      (viperfmt--reformat-buffer)
+    (error "You really should be using Emacs version >= 26.2")))
 
-;;;###autoload
 (defun viperfmt--reformat-buffer ()
   "Reformat and replace current buffer."
-  (save-excursion
-    (let* ((filename buffer-file-name)
-           (formatted-buffer (get-buffer-create "*viperfmt*"))
-           (formatted-contents (viperfmt--reformat-region-as-is (point-min)
-                                                                (point-max))))
-      (unwind-protect
-          (progn (with-current-buffer formatted-buffer
-                   (erase-buffer)
-                   (insert formatted-contents))
-                 (erase-buffer)
-                 (insert-buffer formatted-buffer))
-        (kill-buffer formatted-buffer)))))
+  (viperfmt--reformat-region-as-is (point-min)
+                                   (point-max)))
 
 ;; Internal functions
 
 (defun viperfmt--reformat-region-as-is (beg end)
   "Reformat the given region from `BEG' to `END' as-is."
-  (with-current-buffer (current-buffer)
-    (let* ((buffer-contents (buffer-substring-no-properties beg end))
-           (s (viperfmt--format-string buffer-contents)))
-      s)))
+  (let* ((original (current-buffer))
+         (orig-str (buffer-substring-no-properties beg end)))
+    (save-excursion
+      (let* ((last-decl (= end (point-max)))
+             (new-str (viperfmt--format-string orig-str)))
+        (if (not (string= new-str orig-str))
+            (progn
+              (if (fboundp 'replace-region-contents)
+                  (replace-region-contents
+                   beg end (lambda () new-str))
+                (let ((line (line-number-at-pos))
+                      (col (current-column)))
+                  (delete-region beg end)
+                  (insert new-str)))
+              (message "Formatted."))
+          (message "Already formatted."))))))
 
 (defun viperfmt--format-string (str)
   "Reformat `STR' as a Viper program."
@@ -113,6 +115,7 @@
     v))
 
 ;; FIXME this is a terrible copy of https://github.com/viperproject/viper-ide/blob/master/client/src/ViperFormatter.ts
+;; Formatting is best done in the server with the AST
 (defun viperfmt--tokenize (str)
   "Tokenize a Viper program `STR'."
   (let ((i 0)

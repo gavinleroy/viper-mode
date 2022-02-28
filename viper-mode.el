@@ -19,8 +19,7 @@
 ;;
 ;;; Code:
 
-(eval-when-compile (require 'rx))
-(eval-when-compile (require 'viperfmt))
+(require 'rx)
 
 ;; Load dependencies and optional libraries
 
@@ -56,7 +55,7 @@
 (defvar viper-mode-syntax-table
   (let ((table (make-syntax-table)))
 
-    ;; Operators
+    ;; Operators ;; FIXME not all operators supported in Viper
     (dolist (i '(?+ ?- ?* ?/ ?% ?& ?| ?^ ?! ?< ?> ?~ ?@))
       (modify-syntax-entry i "." table))
 
@@ -133,36 +132,6 @@
     "import" "predicate"
     "method" "new"))
 
-;; \b(function)\b(\s+([$\w]+(\.\[$\w])?))? ;; Silver meta-function
-;; (defconst viper-function
-;;   (eval-when-compile
-;;     "\b(function)\b(\s+([$\w]+(\.\[$\w])?))?")
-;;   "Regular expression matching Viper function.")
-
-;; \b(axiom)\b(\s+([$\w]+(\.[$\w]+)?))? ;; Silver Axiom
-;; (defconst viper-axiom
-;;   (eval-when-compile
-;;     "\b(axiom)\b(\s+([$\w]+(\.[$\w]+)?))?")
-;;   "Regular expression matching Viper axiom.")
-
-;; \b(import)\b(\s+(".*?"|<.*?>))? ;; Silver meta imports
-;; (defconst viper-import
-;;   (eval-when-compile
-;;     "\b(import)\b(\s+(\".*?\"|<.*?>))?")
-;;   "Regular expression matching Viper imports.")
-
-;; \b(predicate)\b(\s+([$\w]+(\.[$\w]+)?))? ;; Silver predicate
-;; (defconst viper-predicate
-;;   (eval-when-compile
-;;     "\b(predicate)\b(\s+([$\w]+(\.[$\w]+)?))?")
-;;   "Regular expression matching Viper predicates.")
-
-;; \b(method)\b(\s+([$\w]+(\.[$\w]+)?))? ;; Silver method
-;; (defconst viper-method
-;;   (eval-when-compile
-;;     "\b(method)\b(\s+([$\w]+(\.[$\w]+)?))?")
-;;   "Regular expression matching Viper methods.")
-
 ;; \b(domain|range)\b\s*\( ;; Silver verification expression
 (defconst viper-domains
   '("domain" "range"))
@@ -202,48 +171,37 @@
    `(
      ;; Language constants
      (,(regexp-opt viper-language-constants 'symbols) . font-lock-keyword-face)
-
-     ;; Numeric constants
-     (,viper-numeric-const 1 font-lock-type-face)
-
      ;; Primitive types
      (,(regexp-opt viper-primitive-type 'symbols) . font-lock-type-face)
-
      ;; Other keywords
      (,(regexp-opt viper-other-keywords 'symbols) . font-lock-keyword-face)
-
      (,(regexp-opt viper-domains 'symbols) . font-lock-keyword-face)
-
      (,(regexp-opt viper-variable-declarations 'symbols) . font-lock-variable-name-face)
-
      (,(regexp-opt viper-named-assertions 'symbols) . font-lock-keyword-face)
-
      (,(regexp-opt viper-control-flows 'symbols) . font-lock-keyword-face)
-
      (,(regexp-opt viper-verification-symbols 'symbols) . font-lock-keyword-face)
-
      (,(regexp-opt viper-statements 'symbols) . font-lock-keyword-face)
-
      (,(regexp-opt viper-contracts 'symbols) . font-lock-keyword-face)
-
      (,(regexp-opt viper-operations 'symbols) . viper-operator-face)
-
      (,viper-single-comment 1 font-lock-comment-face)
-
      (,viper-multi-comment 1 font-lock-comment-face)
-
      ;; FIXME many more things
-
      )))
-
 ;;; _
 
 (defun viper-mode-reload ()
+  "Reload the `viper-mode' package."
   (interactive)
   (unload-feature 'viper-mode)
   (require 'viper-mode)
   (viper-mode))
 
 (provide 'viper-mode)
+
+(defvar viper-load-optional-libraries t
+  "Whether loading `viper-mode' also loads optional libraries.")
+
+(when viper-load-optional-libraries
+  (require 'viperfmt))
 
 ;;; viper-mode.el ends here
