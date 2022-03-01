@@ -48,7 +48,7 @@
   :safe #'integerp)
 
 (defface viper-operator-face
-  '((t :inherit default))
+  '((t :inherit bold))
   "Face for Viper operators."
   :group 'viper-mode)
 
@@ -128,13 +128,48 @@
     "Seq" "Multiset" "Map"))
 
 (defconst viper-other-keywords
-  '("function" "axiom"
-    "import" "predicate"
-    "method" "new"))
+  '("new"
+    ;; the below should have their own matches
+    "function" "method" "axiom"
+    "import" "predicate" "domain"
+    "range"
+    ))
+
+;; \b(function)\b(\s+([$\w]+(\.\[$\w])?))? ;; Silver meta-function
+(defconst viper-function
+  (eval-when-compile
+    "\b(function)\b(\s+([$\w]+(\.\[$\w])?))?")
+  "Regular expression matching Viper function.")
+
+;; \b(axiom)\b(\s+([$\w]+(\.[$\w]+)?))? ;; Silver Axiom
+(defconst viper-axiom
+  (eval-when-compile
+    "\b(axiom)\b(\s+([$\w]+(\.[$\w]+)?))?")
+  "Regular expression matching Viper axiom.")
+
+;; \b(import)\b(\s+(".*?"|<.*?>))? ;; Silver meta imports
+(defconst viper-import
+  (eval-when-compile
+    "\b(import)\b(\s+(\".*?\"|<.*?>))?")
+  "Regular expression matching Viper imports.")
+
+;; \b(predicate)\b(\s+([$\w]+(\.[$\w]+)?))? ;; Silver predicate
+(defconst viper-predicate
+  (eval-when-compile
+    "\b(predicate)\b(\s+([$\w]+(\.[$\w]+)?))?")
+  "Regular expression matching Viper predicates.")
+
+;; \b(method)\b(\s+([$\w]+(\.[$\w]+)?))? ;; Silver method
+(defconst viper-method
+  (eval-when-compile
+    "\b(method)\b(\s+([$\w]+(\.[$\w]+)?))?")
+  "Regular expression matching Viper methods.")
 
 ;; \b(domain|range)\b\s*\( ;; Silver verification expression
 (defconst viper-domains
-  '("domain" "range"))
+  (eval-when-compile
+    "\b(domain|range)\b\s*\("
+    "Regular expression matching domain or range declaration."))
 
 ;; :: ;; TODO forall separator
 
@@ -164,7 +199,9 @@
 
 (defconst viper-operations
   '("union" "in" "intersection"
-    "setminus" "\+\+" "subset"))
+    "setminus" "\+\+" "subset"
+    "::" ;; the forall separator isn't really an "operator"
+    ))
 
 (defvar viper-font-lock-keywords
   (append
@@ -175,17 +212,27 @@
      (,(regexp-opt viper-primitive-type 'symbols) . font-lock-type-face)
      ;; Other keywords
      (,(regexp-opt viper-other-keywords 'symbols) . font-lock-keyword-face)
-     (,(regexp-opt viper-domains 'symbols) . font-lock-keyword-face)
      (,(regexp-opt viper-variable-declarations 'symbols) . font-lock-variable-name-face)
      (,(regexp-opt viper-named-assertions 'symbols) . font-lock-keyword-face)
      (,(regexp-opt viper-control-flows 'symbols) . font-lock-keyword-face)
      (,(regexp-opt viper-verification-symbols 'symbols) . font-lock-keyword-face)
-     (,(regexp-opt viper-statements 'symbols) . font-lock-keyword-face)
+     (,(regexp-opt viper-statements 'symbols) . font-lock-builtin-face)
      (,(regexp-opt viper-contracts 'symbols) . font-lock-keyword-face)
      (,(regexp-opt viper-operations 'symbols) . viper-operator-face)
-     (,viper-single-comment 1 font-lock-comment-face)
-     (,viper-multi-comment 1 font-lock-comment-face)
-     ;; FIXME many more things
+     ;; Matching keyword forms e.g. `method ...(...) ... { ... }'
+     ;; FIXME the below don't highlight properly,
+     ;; for convenience they've been mergied with 'viper-other-keywords.
+     ;; (,viper-single-comment 1 font-lock-comment-face)
+     ;; (,viper-multi-comment 1 font-lock-comment-face)
+
+     ;; (,viper-function 1 font-lock-keyword-face)
+     ;; (,viper-method 0 font-lock-keyword-face)
+     ;; (,viper-axiom 1 font-lock-keyword-face)
+     ;; (,viper-import 0 font-lock-keyword-face)
+     ;; (,viper-predicate 1 font-lock-keyword-face)
+     ;; (,viper-domains 1 font-lock-keyword-face)
+
+     ;; TODO many more things
      )))
 ;;; _
 
