@@ -23,6 +23,7 @@
 (require 'lsp-mode)
 (require 'ht)
 (require 'lsp-viper-protocol)
+(require 'lsp-viper-settings)
 
 (defgroup lsp-viper nil
   "LSP support for Viper using viper-tools installation."
@@ -83,6 +84,17 @@
 ;; --------------------
 ;; Notification handlers
 
+(defun lsp-viper--file-opened (workspace fn)
+  "Message user that `FN' was opened in `WORKSPACE'."
+  (with-lsp-workspace workspace
+    (message (format "File opened: %s" fn))))
+
+(defun lsp-viper--file-closed (workspace fn)
+  "Message user that `FN' was opened in `WORKSPACE'."
+  (with-lsp-workspace workspace
+    (message (format "File closed: %s" fn))))
+
+
 (defun lsp-viper--notification-log (workspace params)
   "Handle the viper/Log extension notification in `WORKSPACE'."
   (with-lsp-workspace workspace
@@ -114,15 +126,37 @@
                        (7 "stopping")
                        (8 "stage"))))))
 
+(defun lsp-viper--verification-not-started (_workspace uri)
+  "Inform the client that verification not started for file `URI' in `WORKSPACE'."
+  (message (format "Verification Not Started for %s" uri)))
+
+(lsp-defun lsp-viper--handle-settings-checked (_workspace (&SettingsCheckedParams :ok :errors :settings))
+  "TODO."
+  (with-help-window "*settings-checked-results*"
+    (progn
+      (princ ok)
+      (princ errors)
+      (princ settings))))
+
 ;; --------------------
 ;; Request handlers
 
 ;; TODO include *.sil and actually look for file endings
-(lsp-defun lsp-viper--notification-get-file-exts (workspace request)
-  ;; PROBLEM request is given as nil, because the server doesn't send anything
-  ;; but this seems to be a problem for sending a response
+(defun lsp-viper--notification-get-file-exts (workspace _args)
+  "Handle request for current Viper file extensions.
+NOTE: only .vpr is currently supported."
   (with-lsp-workspace workspace
-    (lsp--send-request-response workspace (current-time) request '("*.vpr"))))
+    ["*.vpr"]))
+
+(defun lsp-viper--check-settings-versions (workspace _args)
+  "TODO."
+  (with-lsp-workspace workspace
+    nil))
+
+(defun lsp-viper--required-versions (workspace _args)
+  "TODO."
+  (with-lsp-workspace workspace
+    lsp-viper-settings--specified-versions))
 
 ;; --------------------
 ;; Command handlers
@@ -143,27 +177,72 @@
     (apply #'lsp-log format args)))
 
 ;; --------------------
-;; Command execution
+;; Request / Command execution
 
 (defun lsp-viper--execute-command (command &optional args)
   "Send an executeCommand request for `COMMAND' and `ARGS'."
   (lsp--cur-workspace-check)
   (lsp-send-execute-command command (apply #'vector args)))
 
-;; (defun lsp-viper-verify-buffer ()
-;;   "Verify the current buffer with running Viper server."
-;;   (interactive)
-;;   (-let* ((root (lsp-workspace-root default-directory))
-;;           (uri (buffer-string)))
-;;     (lsp-request "verify.verify" (list :uri uri
-;;                                        :manuallyTriggered t
-;;                                        :workspace root)
-;;                  (lambda (resp)
-;;                    (debug)
-;;                    (with-help-window "*test*"
-;;                      (princ resp))))))
+(defun lsp-viper-verify-buffer ()
+  "Verify the current buffer with running Viper server."
+  (interactive)
+  (-let* ((root (lsp-workspace-root default-directory))
+          (uri (buffer-file-name (current-buffer)))
+          (params (list :uri uri
+                        :manuallyTriggered t
+                        :workspace root)))
+    (lsp-notify "Verify" params)))
 
+(defun lsp-viper--request-backend-names ()
+  "TODO."
+  (interactive)
+  (-let* ((response (lsp-request "RequestBackendNames" [])))
+    (with-help-window "*test*"
+      (princ response))))
 
+(defun lsp-viper--stop-all-verifications ()
+  "Stop the verification process for all queued files."
+  (interactive)
+  (let ((response (lsp-request "StopAllVerifications" nil)))
+    (unless response
+      (lsp-viper--log "ERROR: failed to stop verifications")
+      (warn "Unable to stop verifications"))))
+
+(defun lsp-viper--stop-verification (filename)
+  "Stop the verification of `FILENAME'."
+  (let* ((response (lsp-request "StopVerification"
+                                (vector filename))))
+    (unless response
+      (lsp-viper--log "ERROR: failed to stop %s verification" filename)
+      (warn "Unable to stop verification %s" filename))))
+
+(defun lsp-viper-stop-buffer-verification ()
+  "Stop the verification of the current buffer."
+  (interactive)
+  (let ((fn (buffer-file-name (current-buffer))))
+    (lsp-viper--stop-verification fn)))
+
+(defun lsp-viper--get-viper-server-url ()
+  "TODO."
+  (interactive)
+  (let ((response (lsp-request "GetViperServerUrl" nil)))
+    (with-help-window "*test*"
+      (princ response))))
+
+(defun lsp-viper--start-backend ()
+  "Start the verification backend server.
+
+NOTE only 'viperserver' supported by LSP client."
+  (interactive)
+  (lsp-notify "StartBackend"
+              ;; FIXME insert other options:
+              ;; + carbon
+              ;; TODO interactively request from user
+              ;; with a dropdown.
+              "silicon"))
+
+;; --------------------
 
 (add-to-list 'lsp-language-id-configuration '(viper-mode . "viper"))
 (setq lsp-progress-via-spinner t)
@@ -177,9 +256,23 @@
   :notification-handlers (ht ("Log" 'lsp-viper--notification-log)
                              ("Error" 'lsp-viper--notification-error)
                              ("BackendReady" 'lsp-viper--notification-backend-ready)
-                             ("StateChange" 'lsp-viper--notification-state-change))
-  :request-handlers (ht ("GetViperFileEndings" 'lsp-viper--notification-get-file-exts))
+                             ("StateChange" 'lsp-viper--notification-state-change)
+                             ("FileOpened" 'lsp-viper--file-opened)
+                             ("FileClosed" 'lsp-viper--file-closed)
+                             ("VerificationNotStarted" 'lsp-viper--verification-not-started)
+                             ("SettingsChecked" 'lsp-viper--handle-settings-checked)
+                             )
+  :request-handlers (ht ("GetViperFileEndings" 'lsp-viper--notification-get-file-exts)
+                        ("CheckIfSettingsVersionsSpecified" 'lsp-viper--check-settings-versions) ;; TODO
+                        ("RequestRequiredVersion" 'lsp-viper--required-versions) ;; TODO
+                        )
   :server-id 'viper-server))
+
+(defun lsp-viper-reload ()
+  "Reload the `lsp-viper' package."
+  (interactive)
+  (unload-feature 'lsp-viper)
+  (require 'lsp-viper))
 
 (lsp-consistency-check lsp-viper)
 

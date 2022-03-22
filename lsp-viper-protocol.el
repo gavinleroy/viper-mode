@@ -29,7 +29,8 @@
                                  :verificationNeeded :uri :stage :error :diagnostics))
  (LogParams (:data :logLevel) nil)
  (ProgressParams (:domain :curr :total) nil)
- (BackendReadyParams (:name :restarted :isViperServer) nil))
+ (BackendReadyParams (:name :restarted :isViperServer) nil)
+ (GetViperFileEndings nil nil))
 
 ;; TODO not sure yet about how to handle these
 ;;     static Hint = "Hint";//message: string
