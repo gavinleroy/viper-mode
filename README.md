@@ -33,3 +33,12 @@ similar as the following (*hack*) to your `config.el`:
 
 Verification of the open file can be run with `"C-c C-v"` and this mode will include and approximation of the Viper-IDE syntax highlighting and 
 formatting.
+
+## Disclaimer
+
+This repository is not affiliated with the Programming Methodology Group at ETHZ and is a personal project to allow me to avoid VSCode
+while doing coursework that requires me to use Viper. 
+
+Enjoy,
+
+:beers:
